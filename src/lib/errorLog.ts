@@ -14,10 +14,20 @@ export async function logError(
   const code = err && typeof err === 'object' && 'code' in err ? String((err as any).code) : undefined;
   const stack = err instanceof Error ? err.stack : undefined;
 
+  // ProviderError (e outros erros com .details, ex.: httpStatus/body do
+  // PaySuite) carrega o contexto real da falha — captura automaticamente se
+  // o chamador não passou `details` explícito, senão essa informação perde-se.
+  const errDetails =
+    err && typeof err === 'object' && 'details' in err
+      ? ((err as any).details as unknown)
+      : undefined;
+  const finalDetails =
+    details ?? (errDetails && typeof errDetails === 'object' ? (errDetails as Record<string, unknown>) : undefined);
+
   console.error(`[${source}]`, err);
 
   try {
-    await db.insert(errorLogs).values({ source, code, message, details, stack });
+    await db.insert(errorLogs).values({ source, code, message, details: finalDetails, stack });
   } catch (loggingErr) {
     console.error(`[errorLog] falha ao gravar error_log de "${source}":`, loggingErr);
   }
