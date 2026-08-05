@@ -20,3 +20,22 @@ export type ChargeInput = z.infer<typeof chargeSchema>;
 export function formatAmount(amount: number): string {
   return amount.toFixed(2);
 }
+
+// Corpo do POST /api/internal/messages/sms.
+// Formato internacional (E.164): '+' seguido de 7 a 15 dígitos, ex: +258840000000.
+const phoneRegex = /^\+[1-9]\d{6,14}$/;
+
+export const smsSchema = z.object({
+  to: z.string().regex(phoneRegex, 'Número de telefone inválido (use formato internacional, ex: +258840000000)'),
+  message: z.string().min(1).max(1000)
+});
+
+export type SmsInput = z.infer<typeof smsSchema>;
+
+// Corpo do POST /api/internal/messages/push.
+export const pushSchema = z.object({
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(500)
+});
+
+export type PushInput = z.infer<typeof pushSchema>;

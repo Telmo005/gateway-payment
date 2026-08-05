@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { apps, webhookDeliveries, transactions, type Transaction, type App } from '@/db/schema';
 import { hmacHex } from './crypto';
+import { sendPush } from './messaging';
+import { logError } from './errorLog';
 
 // ============================================================================
 // Fan-out: o gateway reenvia o evento de pagamento para o /callback do app,
@@ -40,6 +42,24 @@ function nextRetryDelayMs(attempts: number): number {
   return Math.min(30_000 * 2 ** (attempts - 1), 3_600_000);
 }
 
+// Notifica por push todo pagamento processado aqui (sucesso ou falha).
+// Best-effort: uma falha ao notificar nunca deve impedir o fan-out real ao
+// app dono da transacção.
+async function notifyPayment(
+  tx: Transaction,
+  eventType: 'payment.success' | 'payment.failed'
+): Promise<void> {
+  const title = eventType === 'payment.success' ? 'Pagamento recebido' : 'Pagamento falhou';
+  const amount = `${tx.currency} ${Number(tx.amount).toFixed(2)}`;
+  const body = `${amount} via ${tx.method} — ref ${tx.appReference}`;
+
+  try {
+    await sendPush(title, body);
+  } catch (err) {
+    await logError('fanout.notifyPayment', err, { transactionId: tx.id, eventType });
+  }
+}
+
 // Cria a linha de entrega e tenta entregar já. Chamada a partir do webhook.
 export async function enqueueAndDeliver(
   tx: Transaction,
@@ -59,6 +79,7 @@ export async function enqueueAndDeliver(
     .returning();
 
   await attemptDelivery(delivery.id);
+  await notifyPayment(tx, eventType);
 }
 
 // Tenta entregar UMA linha de webhook_deliveries. Idempotente e segura para o

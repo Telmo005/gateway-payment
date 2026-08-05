@@ -6,6 +6,7 @@ import { authorizeCron } from '@/lib/auth';
 import { getChargeStatus } from '@/lib/paysuite';
 import { enqueueAndDeliver } from '@/lib/fanout';
 import { ApiError } from '@/lib/errors';
+import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -65,8 +66,9 @@ export async function POST(request: Request) {
         reconciled++;
         results.push({ id: tx.id, status: newStatus });
       }
-    } catch {
+    } catch (err) {
       // Falha ao consultar uma transacção não deve abortar o lote todo.
+      await logError('internal.reconcile', err, { transactionId: tx.id });
       continue;
     }
   }

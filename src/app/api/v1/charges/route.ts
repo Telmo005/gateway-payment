@@ -7,6 +7,7 @@ import { chargeSchema, formatAmount } from '@/lib/validation';
 import { generateReference } from '@/lib/references';
 import { createCharge } from '@/lib/paysuite';
 import { ApiError } from '@/lib/errors';
+import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
 
@@ -80,11 +81,11 @@ export async function POST(request: Request) {
       checkout_url: charge.checkoutUrl ?? null
     });
   } catch (err) {
-    return errorResponse(err);
+    return await errorResponse(err);
   }
 }
 
-function errorResponse(err: unknown) {
+async function errorResponse(err: unknown) {
   if (err instanceof ApiError) {
     return NextResponse.json(
       { error: { code: err.code, message: err.message, details: err.details } },
@@ -92,6 +93,7 @@ function errorResponse(err: unknown) {
     );
   }
   // ProviderError e imprevistos: não vazar detalhes internos ao app.
+  await logError('charges.create', err);
   return NextResponse.json(
     { error: { code: 'GATEWAY_ERROR', message: 'Falha ao processar a cobrança' } },
     { status: 502 }

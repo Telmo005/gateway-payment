@@ -1,0 +1,26 @@
+meta {
+  name: Send SMS
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/internal/messages/sms
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{cronSecret}}
+}
+
+body:json {
+  {
+    "to": "+258840000000",
+    "message": "Teste via Bruno — pode ignorar"
+  }
+}

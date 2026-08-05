@@ -1,0 +1,26 @@
+meta {
+  name: Send Push
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/internal/messages/push
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{cronSecret}}
+}
+
+body:json {
+  {
+    "title": "PayGate — teste",
+    "body": "Teste via Bruno — pode ignorar"
+  }
+}

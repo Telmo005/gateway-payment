@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "PayGate — Messages",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}

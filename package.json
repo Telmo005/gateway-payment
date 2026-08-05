@@ -1,5 +1,5 @@
 {
-  "name": "paygate",
+  "name": "gateway",
   "version": "0.1.0",
   "private": true,
   "description": "Orquestrador central de pagamentos PaySuite multi-tenant. Um webhook, N apps.",

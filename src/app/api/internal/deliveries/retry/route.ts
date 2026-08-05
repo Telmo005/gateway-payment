@@ -5,6 +5,7 @@ import { webhookDeliveries } from '@/db/schema';
 import { authorizeCron } from '@/lib/auth';
 import { attemptDelivery } from '@/lib/fanout';
 import { ApiError } from '@/lib/errors';
+import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -31,9 +32,18 @@ export async function POST(request: Request) {
     )
     .limit(BATCH);
 
+  // Cada entrega é isolada: uma falha (ex.: soletra de rede pontual numa só
+  // delivery) não pode abortar o lote inteiro e deixar as restantes sem
+  // tentativa até ao próximo minuto.
+  let failed = 0;
   for (const d of due) {
-    await attemptDelivery(d.id);
+    try {
+      await attemptDelivery(d.id);
+    } catch (err) {
+      failed++;
+      await logError('internal.deliveries.retry', err, { deliveryId: d.id });
+    }
   }
 
-  return NextResponse.json({ processed: due.length });
+  return NextResponse.json({ processed: due.length, failed });
 }
