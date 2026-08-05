@@ -149,6 +149,23 @@ export const webhookDeliveries = pgTable(
   ]
 );
 
+// Log persistente de erros de servidor (não-4xx-de-cliente). Best-effort —
+// nunca deve derrubar o request que o originou (ver src/lib/errorLog.ts).
+export const errorLogs = pgTable(
+  'error_logs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    source: text('source').notNull(), // ex.: 'webhooks.paysuite', 'charges.create'
+    code: text('code'),
+    message: text('message').notNull(),
+    details: jsonb('details').$type<Record<string, unknown>>(),
+    stack: text('stack'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index('error_logs_created_at_idx').on(t.createdAt), index('error_logs_source_idx').on(t.source)]
+);
+
 export type App = typeof apps.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type WebhookDelivery = typeof webhookDeliveries.$inferSelect;
+export type ErrorLog = typeof errorLogs.$inferSelect;

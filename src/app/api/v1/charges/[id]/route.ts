@@ -4,6 +4,7 @@ import { db } from '@/db/client';
 import { transactions } from '@/db/schema';
 import { authenticateApp } from '@/lib/auth';
 import { ApiError } from '@/lib/errors';
+import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
 
@@ -38,6 +39,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (err instanceof ApiError) {
       return NextResponse.json({ error: { code: err.code, message: err.message } }, { status: err.status });
     }
+    await logError('charges.get', err);
     return NextResponse.json({ error: { code: 'GATEWAY_ERROR', message: 'Erro interno' } }, { status: 500 });
   }
 }

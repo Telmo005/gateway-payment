@@ -1,0 +1,19 @@
+meta {
+  name: Get Status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/internal/messages/:id
+  body: none
+  auth: bearer
+}
+
+params:path {
+  id: cole-aqui-o-id-devolvido-pelo-send-sms-ou-send-push
+}
+
+auth:bearer {
+  token: {{cronSecret}}
+}

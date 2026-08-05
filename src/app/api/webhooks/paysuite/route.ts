@@ -4,6 +4,7 @@ import { db } from '@/db/client';
 import { transactions, providerEvents } from '@/db/schema';
 import { verifyWebhookSignature, parseWebhookEvent } from '@/lib/paysuite';
 import { enqueueAndDeliver } from '@/lib/fanout';
+import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
 
@@ -38,6 +39,13 @@ export async function POST(request: Request) {
   // Idempotência: o PaySuite reentrega até 5x. O insert em provider_events
   // com request_id único falha (onConflictDoNothing devolve vazio) se já
   // processámos este evento — nesse caso, ack e sai.
+  //
+  // O insert de dedup e o processamento abaixo NÃO são atómicos entre si.
+  // Se o processamento falhar depois do dedup já ter sido gravado, uma
+  // reentrega do PaySuite seria descartada como "duplicate" SEM nunca ter
+  // sido processada de verdade — por isso, em caso de erro, desfazemos o
+  // dedup explicitamente para permitir reprocessar na próxima reentrega.
+  let dedupInserted = false;
   if (event.requestId) {
     const inserted = await db
       .insert(providerEvents)
@@ -53,47 +61,66 @@ export async function POST(request: Request) {
     if (inserted.length === 0) {
       return NextResponse.json({ received: true, duplicate: true });
     }
+    dedupInserted = true;
   }
 
-  // Encontra a transacção (e portanto o app dono) pelo id do PaySuite.
-  const [tx] = await db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.providerPaymentId, event.providerPaymentId))
-    .limit(1);
+  try {
+    // Encontra a transacção (e portanto o app dono) pelo id do PaySuite.
+    const [tx] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.providerPaymentId, event.providerPaymentId))
+      .limit(1);
 
-  if (!tx) {
-    // Sem correspondência — ack para parar reentregas.
-    return NextResponse.json({ received: true, matched: false });
-  }
-
-  if (event.type === 'payment.success') {
-    // UPDATE condicional no próprio WHERE (não numa leitura prévia): só
-    // transita para 'success' se ainda NÃO estava 'success'. Aceita vir de
-    // 'pending' OU 'failed' (o PaySuite pode mandar um failed prematuro antes
-    // do success real). Se `returning()` vier vazio, outro webhook concorrente
-    // já processou — não fazemos fan-out duplicado. 'success' é terminal.
-    const updated = await db
-      .update(transactions)
-      .set({ status: 'success', paidAt: new Date(), updatedAt: new Date(), providerRaw: event.raw })
-      .where(and(eq(transactions.id, tx.id), ne(transactions.status, 'success')))
-      .returning();
-
-    if (updated[0]) {
-      await enqueueAndDeliver(updated[0], 'payment.success');
+    if (!tx) {
+      // Sem correspondência — ack para parar reentregas.
+      return NextResponse.json({ received: true, matched: false });
     }
-  } else if (event.type === 'payment.failed') {
-    // Só marca falhado se ainda 'pending' — nunca sobrepõe um sucesso já dado.
-    const updated = await db
-      .update(transactions)
-      .set({ status: 'failed', updatedAt: new Date(), providerRaw: event.raw })
-      .where(and(eq(transactions.id, tx.id), eq(transactions.status, 'pending')))
-      .returning();
 
-    if (updated[0]) {
-      await enqueueAndDeliver(updated[0], 'payment.failed');
+    if (event.type === 'payment.success') {
+      // UPDATE condicional no próprio WHERE (não numa leitura prévia): só
+      // transita para 'success' se ainda NÃO estava 'success'. Aceita vir de
+      // 'pending' OU 'failed' (o PaySuite pode mandar um failed prematuro antes
+      // do success real). Se `returning()` vier vazio, outro webhook concorrente
+      // já processou — não fazemos fan-out duplicado. 'success' é terminal.
+      const updated = await db
+        .update(transactions)
+        .set({ status: 'success', paidAt: new Date(), updatedAt: new Date(), providerRaw: event.raw })
+        .where(and(eq(transactions.id, tx.id), ne(transactions.status, 'success')))
+        .returning();
+
+      if (updated[0]) {
+        await enqueueAndDeliver(updated[0], 'payment.success');
+      }
+    } else if (event.type === 'payment.failed') {
+      // Só marca falhado se ainda 'pending' — nunca sobrepõe um sucesso já dado.
+      const updated = await db
+        .update(transactions)
+        .set({ status: 'failed', updatedAt: new Date(), providerRaw: event.raw })
+        .where(and(eq(transactions.id, tx.id), eq(transactions.status, 'pending')))
+        .returning();
+
+      if (updated[0]) {
+        await enqueueAndDeliver(updated[0], 'payment.failed');
+      }
     }
-  }
 
-  return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true });
+  } catch (err) {
+    await logError('webhooks.paysuite', err, {
+      requestId: event.requestId,
+      providerPaymentId: event.providerPaymentId,
+      eventType: event.type
+    });
+
+    if (dedupInserted && event.requestId) {
+      await db
+        .delete(providerEvents)
+        .where(eq(providerEvents.requestId, event.requestId))
+        .catch(() => {});
+    }
+
+    // 500 propositado: faz o PaySuite reentregar este evento mais tarde.
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+  }
 }
