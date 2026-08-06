@@ -1,5 +1,6 @@
 import { db } from '@/db/client';
 import { errorLogs } from '@/db/schema';
+import { sendPush } from './messaging';
 
 // Regista um erro de servidor em `error_logs`, além do console. Best-effort:
 // uma falha ao gravar nunca deve mascarar o erro original nem derrubar o
@@ -30,5 +31,17 @@ export async function logError(
     await db.insert(errorLogs).values({ source, code, message, details: finalDetails, stack });
   } catch (loggingErr) {
     console.error(`[errorLog] falha ao gravar error_log de "${source}":`, loggingErr);
+  }
+
+  // Antes disto, o único push que o gateway disparava era o de sucesso/
+  // falha de pagamento (fanout.ts) — qualquer outra falha (PaySuite em
+  // baixo, erro de validação, etc.) só existia em error_logs, nunca
+  // notificava ninguém em tempo real. Título fixo "PayGate" identifica a
+  // origem no celular-gateway partilhado por todas as apps; console.error
+  // (não logError) no catch evita recursão se o próprio push falhar.
+  try {
+    await sendPush('PayGate', `Erro: ${source}\n\n${message}`);
+  } catch (pushErr) {
+    console.error(`[errorLog] falha ao enviar push para erro de "${source}":`, pushErr);
   }
 }

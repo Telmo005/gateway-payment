@@ -10,6 +10,12 @@
  */
 import crypto from 'crypto';
 
+// `fetch` has no default timeout — an unreachable/misconfigured
+// PAYGATE_BASE_URL, or the gateway itself hanging, would otherwise leave
+// this call pending indefinitely instead of failing fast (confirmed in
+// production via a consumer app: a deposit request that never returned).
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export type PaymentMethod = 'mpesa' | 'emola' | 'credit_card';
 
 export interface CreateChargeInput {
@@ -69,7 +75,8 @@ export class PayGateClient {
         description: input.description,
         return_url: input.returnUrl,
         metadata: input.metadata
-      })
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
 
     const json = await res.json().catch(() => null);
@@ -88,7 +95,8 @@ export class PayGateClient {
   /** Consulta de estado (fallback/polling). */
   async getCharge(gatewayPaymentId: string) {
     const res = await fetch(`${this.baseUrl}/api/v1/charges/${gatewayPaymentId}`, {
-      headers: { Authorization: `Bearer ${this.apiKey}` }
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
     const json = await res.json().catch(() => null);
     if (!res.ok) throw new Error(`PayGate getCharge falhou: ${res.status}`);

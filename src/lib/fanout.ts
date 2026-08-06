@@ -45,16 +45,23 @@ function nextRetryDelayMs(attempts: number): number {
 // Notifica por push todo pagamento processado aqui (sucesso ou falha).
 // Best-effort: uma falha ao notificar nunca deve impedir o fan-out real ao
 // app dono da transacção.
+//
+// Título = nome da app (não "Pagamento recebido") porque o celular-gateway
+// recebe pushes de VÁRIAS apps (Invoice Hub, bShare, DueloBet, o próprio
+// gateway) no mesmo dispositivo — sem identificar a origem, duas apps a
+// processar pagamentos ao mesmo tempo produzem notificações indistinguíveis.
 async function notifyPayment(
   tx: Transaction,
   eventType: 'payment.success' | 'payment.failed'
 ): Promise<void> {
-  const title = eventType === 'payment.success' ? 'Pagamento recebido' : 'Pagamento falhou';
+  const subject = eventType === 'payment.success' ? 'Pagamento recebido' : 'Pagamento falhou';
   const amount = `${tx.currency} ${Number(tx.amount).toFixed(2)}`;
-  const body = `${amount} via ${tx.method} — ref ${tx.appReference}`;
+  const description = `${amount} via ${tx.method} — ref ${tx.appReference}`;
 
   try {
-    await sendPush(title, body);
+    const [app] = await db.select({ name: apps.name }).from(apps).where(eq(apps.id, tx.appId)).limit(1);
+    const title = app?.name ?? 'PayGate';
+    await sendPush(title, `${subject}\n\n${description}`);
   } catch (err) {
     await logError('fanout.notifyPayment', err, { transactionId: tx.id, eventType });
   }

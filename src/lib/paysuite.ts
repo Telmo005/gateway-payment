@@ -17,6 +17,14 @@ import { ProviderError } from './errors';
 
 const BASE_URL = process.env.PAYSUITE_BASE_URL || 'https://paysuite.tech/api/v1';
 
+// `fetch` has no default timeout — if PaySuite itself hangs (as opposed to
+// responding with an error), this call would stay open for however long
+// the platform's own function timeout allows, tying up the /api/v1/charges
+// request the whole time. A consumer app (DueloBet) already times out its
+// own call to this gateway after 15s regardless, but that only stops the
+// caller from waiting — it does nothing for the request still running here.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export type PaymentMethod = 'mpesa' | 'emola' | 'credit_card';
 export type ChargeStatus = 'pending' | 'success' | 'failed';
 
@@ -83,7 +91,8 @@ export async function createCharge(input: PaySuiteChargeInput): Promise<PaySuite
       description: input.description,
       return_url: input.returnUrl,
       callback_url: input.callbackUrl
-    })
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
 
   const json = (await response.json().catch(() => null)) as any;
@@ -105,7 +114,8 @@ export async function createCharge(input: PaySuiteChargeInput): Promise<PaySuite
 
 export async function getChargeStatus(providerPaymentId: string): Promise<PaySuiteChargeResult> {
   const response = await fetch(`${BASE_URL}/payments/${providerPaymentId}`, {
-    headers: { Authorization: `Bearer ${token()}` }
+    headers: { Authorization: `Bearer ${token()}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
 
   const json = (await response.json().catch(() => null)) as any;
