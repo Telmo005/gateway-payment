@@ -1,23 +1,33 @@
 /**
  * EXEMPLO — como um app inicia uma cobrança via gateway (substitui a chamada
- * direta ao PaySuiteProvider.charge no Invoice Hub).
+ * direta ao provider de pagamento no Invoice Hub).
+ *
+ * Desde a migração para Debito Pay há dois fluxos:
+ *  - mpesa confirma já nesta resposta ('success'/'failed').
+ *  - emola/mkesh/visa_mastercard/payfast nascem 'pending' — para cartão/
+ *    payfast, redirecciona o utilizador para `charge.checkoutUrl`; para os
+ *    restantes, o teu endpoint de callback (webhook do gateway) é chamado
+ *    quando confirmar.
  */
 import { PayGateClient } from '@/lib/payments/paygate-client';
 // import { supabaseServer } from '@/lib/supabase-server';
 
 const paygate = new PayGateClient();
 
-export async function iniciarCobrancaExemplo(userId: string) {
+export async function iniciarCobrancaExemplo(userId: string, payerPhone: string, payerName: string) {
   // 1. Cria o registo local ANTES (para teres um id estável como referência).
   //    const pagamentoId = crypto.randomUUID();
 
   // 2. Chama o gateway. `reference` = a tua chave de idempotência local.
+  //    payerPhone/payerName vêm de quem está a pagar (ex.: formulário) —
+  //    sem checkout hospedado, o gateway precisa deles já aqui.
   const charge = await paygate.createCharge({
     reference: 'IHP-EXEMPLO-123', // ex.: pagamentoId
     amount: 10,
     method: 'mpesa',
+    payerPhone, // formato internacional, ex.: '+258840000000'
+    payerName,
     description: 'Documento - Invoice Hub Pro',
-    returnUrl: `${process.env.NEXT_PUBLIC_APP_URL}/pages/payments/success`,
     // Metadados leves. O payload pesado (HTML do documento) fica no TEU BD.
     metadata: { tipo: 'fatura' }
   });
@@ -29,10 +39,13 @@ export async function iniciarCobrancaExemplo(userId: string) {
   //      user_id: userId,
   //      external_id: charge.gatewayPaymentId,
   //      gateway: 'paygate',
-  //      status: 'aguardando_documento',
+  //      status: charge.status === 'success' ? 'pago' : charge.status === 'pending' ? 'pendente' : 'falhou',
   //      ...
   //    });
 
-  // 4. Redireciona o utilizador para pagar.
-  return charge.checkoutUrl;
+  // 4. mpesa: `charge.status` já é o resultado final ('success' | 'failed').
+  //    Se falhou, `charge.message` traz o motivo (ex.: "Saldo insuficiente").
+  //    emola/mkesh: 'pending' — espera o callback. cartão/payfast: 'pending'
+  //    com `charge.checkoutUrl` preenchido — redirecciona o utilizador para lá.
+  return charge;
 }

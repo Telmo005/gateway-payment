@@ -1,9 +1,10 @@
+import './globals.css';
+
 export const metadata = {
-  title: 'PayGate',
-  description: 'Orquestrador central de pagamentos PaySuite'
+  title: 'PayGate — pagamentos via Debito Pay',
+  description: 'Orquestrador central de pagamentos: M-Pesa, e-Mola, mKesh, Visa & Mastercard e PayFast numa única API.'
 };
 
-// Serviço API-only — este layout existe apenas para satisfazer o Next.js.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt">

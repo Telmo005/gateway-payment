@@ -16,16 +16,23 @@ import crypto from 'crypto';
 // production via a consumer app: a deposit request that never returned).
 const REQUEST_TIMEOUT_MS = 15_000;
 
-export type PaymentMethod = 'mpesa' | 'emola' | 'credit_card';
+export type PaymentMethod = 'mpesa' | 'emola' | 'mkesh' | 'visa_mastercard' | 'payfast';
 
 export interface CreateChargeInput {
   /** Referência ÚNICA do teu app — chave de idempotência (ex.: o teu pagamento.id). */
   reference: string;
   amount: number;
   method: PaymentMethod;
+  /** Obrigatório para mpesa/emola/mkesh, formato internacional (+258...). */
+  payerPhone?: string;
+  payerName: string;
+  /** Obrigatório para visa_mastercard/payfast. */
+  payerEmail?: string;
+  /** Obrigatório para visa_mastercard/payfast — para onde o pagador volta depois do Hosted Checkout. */
+  returnUrl?: string;
+  /** 'MZN' (default) ou 'ZAR' — ZAR só com method 'payfast'. */
   currency?: string;
   description?: string;
-  returnUrl?: string;
   /** Metadados leves ecoados no webhook. NÃO metas payloads pesados. */
   metadata?: Record<string, unknown>;
 }
@@ -33,7 +40,13 @@ export interface CreateChargeInput {
 export interface CreateChargeResult {
   gatewayPaymentId: string;
   reference: string;
+  /** mpesa confirma já aqui ('success'/'failed'). Os restantes nascem
+   *  'pending' até o webhook confirmar — usa `checkoutUrl` para redireccionar
+   *  o pagador quando for visa_mastercard/payfast. */
   status: 'pending' | 'success' | 'failed';
+  /** Motivo, útil sobretudo quando status === 'failed' (ex.: "Saldo insuficiente"). */
+  message: string | null;
+  /** Só visa_mastercard/payfast — redirecciona o pagador para aqui. */
   checkoutUrl: string | null;
 }
 
@@ -59,7 +72,12 @@ export class PayGateClient {
     private readonly callbackSecret = process.env.PAYGATE_CALLBACK_SECRET!
   ) {}
 
-  /** Inicia uma cobrança. Devolve o checkout_url para redirecionar o utilizador. */
+  /**
+   * Inicia uma cobrança. mpesa confirma já nesta resposta ('success'/'failed').
+   * emola/mkesh/visa_mastercard/payfast nascem 'pending' — para
+   * visa_mastercard/payfast, redirecciona o pagador para `checkoutUrl`; para
+   * os restantes, espera o teu endpoint de callback ser chamado pelo fan-out.
+   */
   async createCharge(input: CreateChargeInput): Promise<CreateChargeResult> {
     const res = await fetch(`${this.baseUrl}/api/v1/charges`, {
       method: 'POST',
@@ -71,9 +89,12 @@ export class PayGateClient {
         reference: input.reference,
         amount: input.amount,
         method: input.method,
+        payer_phone: input.payerPhone,
+        payer_name: input.payerName,
+        payer_email: input.payerEmail,
+        return_url: input.returnUrl,
         currency: input.currency ?? 'MZN',
         description: input.description,
-        return_url: input.returnUrl,
         metadata: input.metadata
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -88,6 +109,7 @@ export class PayGateClient {
       gatewayPaymentId: json.gateway_payment_id,
       reference: json.reference,
       status: json.status,
+      message: json.message ?? null,
       checkoutUrl: json.checkout_url ?? null
     };
   }
@@ -108,6 +130,7 @@ export class PayGateClient {
       currency: string;
       method: string;
       paid_at: string | null;
+      checkout_url: string | null;
       metadata: Record<string, unknown>;
     };
   }

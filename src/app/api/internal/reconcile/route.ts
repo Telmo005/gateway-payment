@@ -3,7 +3,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { transactions } from '@/db/schema';
 import { authorizeCron } from '@/lib/auth';
-import { getChargeStatus } from '@/lib/paysuite';
+import { getChargeStatus } from '@/lib/debitopay';
 import { enqueueAndDeliver } from '@/lib/fanout';
 import { ApiError } from '@/lib/errors';
 import { logError } from '@/lib/errorLog';
@@ -12,8 +12,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // Rede de segurança contra webhooks perdidos (deploy, partição de rede): faz
-// poll ao PaySuite para transacções ainda 'pending' há mais de N minutos.
-// Se o estado real já mudou, atualiza e dispara o fan-out que se perdeu.
+// poll à Debito Pay para transacções ainda 'pending' há mais de N minutos
+// (emola/mkesh/cartão/payfast — m-Pesa nunca fica 'pending'). Se o estado
+// real já mudou, atualiza e dispara o fan-out que se perdeu.
 //
 // Agendar via Vercel Cron (ex.: a cada 5 min) com Authorization: Bearer CRON_SECRET.
 const STALE_MINUTES = 5;
