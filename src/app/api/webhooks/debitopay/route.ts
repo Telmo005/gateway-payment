@@ -67,11 +67,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, matched: false });
     }
 
+    // Junta ao providerRaw guardado na criação (que tem o `checkout_url` para
+    // cartão/payfast) em vez de o substituir — o corpo do webhook não repete
+    // esse campo, e perdê-lo quebraria o GET /v1/charges/{id} depois de confirmado.
+    const mergedRaw = { ...(tx.providerRaw as Record<string, unknown> | null), ...event.raw };
+
     if (event.type === 'payment.success') {
       // Transita só se ainda não estava 'success' — estado terminal.
       const updated = await db
         .update(transactions)
-        .set({ status: 'success', paidAt: new Date(), updatedAt: new Date(), providerRaw: event.raw })
+        .set({ status: 'success', paidAt: new Date(), updatedAt: new Date(), providerRaw: mergedRaw })
         .where(and(eq(transactions.id, tx.id), ne(transactions.status, 'success')))
         .returning();
 
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
       // Só marca falhado se ainda 'pending' — nunca sobrepõe um sucesso já dado.
       const updated = await db
         .update(transactions)
-        .set({ status: 'failed', updatedAt: new Date(), providerRaw: event.raw })
+        .set({ status: 'failed', updatedAt: new Date(), providerRaw: mergedRaw })
         .where(and(eq(transactions.id, tx.id), eq(transactions.status, 'pending')))
         .returning();
 

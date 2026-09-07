@@ -129,8 +129,10 @@ export async function createCharge(input: DebitoPayChargeInput): Promise<DebitoP
     source_id: input.reference
   };
 
-  if (input.payerPhone) body.phone = input.payerPhone;
-  if (input.payerPhone) body.customer_phone = input.payerPhone;
+  if (input.payerPhone) {
+    body.phone = input.payerPhone;
+    body.customer_phone = input.payerPhone;
+  }
   if (input.payerName) body.customer_name = input.payerName;
   if (input.payerEmail) body.customer_email = input.payerEmail;
   if (input.returnUrl) body.return_url = input.returnUrl;

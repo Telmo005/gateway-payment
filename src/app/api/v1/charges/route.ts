@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         gateway_payment_id: existing.id,
         reference: existing.appReference,
         status: existing.status,
-        message: null,
+        message: (existing.providerRaw as any)?.message ?? null,
         checkout_url: (existing.providerRaw as any)?.checkout_url ?? null,
         idempotent_replay: true
       });
@@ -77,6 +77,7 @@ export async function POST(request: Request) {
         description: input.description,
         status: result.status, // 'success' | 'pending' | 'failed'
         paidAt: result.status === 'success' ? new Date() : null,
+        returnUrl: input.return_url,
         metadata: input.metadata ?? {},
         providerRaw: result.raw
       })
