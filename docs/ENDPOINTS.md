@@ -3,7 +3,9 @@
 Este serviço (`package.json` name: `gateway`, nome de marca "PayGate") é o
 ponto único para:
 
-1. **Pagamentos** — cobranças via PaySuite (m-Pesa, e-Mola, cartão).
+1. **Pagamentos** — cobranças via Debito Pay (m-Pesa, e-Mola, mKesh,
+   Visa/Mastercard, PayFast ZAR). Migrado do PaySuite/MozPayment em 2026-09;
+   ver nota na secção 1.
 2. **Mensagens** — SMS real e notificações push, via o celular-gateway
    Android já existente (insere linhas em `messages`; o celular processa em
    ~15s e reporta o estado de volta).
@@ -15,6 +17,12 @@ Base URL:
 | Local (dev) | `http://localhost:4000` |
 | Produção | `https://<domínio do deploy>` (definir em `PUBLIC_BASE_URL`) |
 
+Variáveis de ambiente do provider de pagamento (só o backend deste gateway
+precisa delas): `DEBITOPAY_API_KEY`, `DEBITOPAY_MERCHANT_ID`,
+`DEBITOPAY_WALLET_CODE_MZN`, `DEBITOPAY_WALLET_CODE_ZAR` (só se usares
+PayFast) e `DEBITOPAY_WEBHOOK_SECRET`. `PAYSUITE_*`/`MOZPAYMENT_*` ficam
+legado, sem uso.
+
 Todas as respostas de erro seguem o mesmo formato:
 
 ```json
@@ -25,49 +33,85 @@ Todas as respostas de erro seguem o mesmo formato:
 
 ## 1. Pagamentos
 
+> **Debito Pay mistura síncrono e assíncrono, conforme o método.** `mpesa`
+> confirma já na resposta do `POST` (`status: "success"` ou `"failed"`), como
+> antes. `emola`, `mkesh`, `visa_mastercard` e `payfast` nascem
+> `status: "pending"` — a confirmação chega pelo webhook. Para
+> `visa_mastercard`/`payfast` a resposta também traz `checkout_url`: redirecciona
+> o pagador para lá (Hosted Checkout da Debito Pay — os dados do cartão nunca
+> tocam este gateway).
+
 ### `POST /api/v1/charges`
 
 Auth: `Authorization: Bearer <PAYGATE_API_KEY>` (chave por app, dada no
 `npm run app:register`).
 
 ```jsonc
-// pedido
+// pedido — mobile money (mpesa | emola | mkesh)
 {
   "reference": "IHP-123",       // referência própria do app (idempotente)
-  "amount": 10,
-  "method": "mpesa",            // 'mpesa' | 'emola' | 'credit_card'
-  "currency": "MZN",            // opcional, default MZN
+  "amount": 150,
+  "method": "mpesa",            // 'mpesa' | 'emola' | 'mkesh' | 'visa_mastercard' | 'payfast'
+  "payer_phone": "+258840000000", // obrigatório para mpesa/emola/mkesh, E.164
+  "payer_name": "João Silva",     // obrigatório
+  "currency": "MZN",            // opcional, default MZN ('ZAR' só com payfast)
   "description": "Documento",   // opcional
-  "return_url": "https://.../success", // opcional
   "metadata": { "tipo": "fatura" }      // opcional, ecoado no fan-out
 }
 
-// resposta
+// pedido — cartão / payfast (Hosted Checkout)
+{
+  "reference": "IHP-124",
+  "amount": 500,
+  "method": "visa_mastercard",  // ou 'payfast' (exige currency "ZAR")
+  "payer_name": "João Silva",
+  "payer_email": "joao@example.com", // obrigatório para visa_mastercard/payfast
+  "return_url": "https://meuapp.com/checkout/resultado", // obrigatório idem
+  "currency": "MZN"
+}
+
+// resposta — mpesa (síncrono)
 {
   "gateway_payment_id": "uuid",
   "reference": "IHP-123",
+  "status": "success",          // ou "failed"
+  "message": "Pagamento processado",
+  "checkout_url": null
+}
+
+// resposta — emola/mkesh/cartão/payfast (assíncrono)
+{
+  "gateway_payment_id": "uuid",
+  "reference": "IHP-124",
   "status": "pending",
-  "checkout_url": "https://paysuite.../checkout/..."
+  "message": null,
+  "checkout_url": "https://debitopay.com/checkout/card?..." // null fora de cartão/payfast
 }
 ```
+
+Valores mínimos por método: `mpesa`/`mkesh` 10 MZN, `emola` 50 MZN,
+`visa_mastercard` 50 MZN, `payfast` 5 ZAR — validado antes de chamar a
+Debito Pay (`400 VALIDATION_ERROR` se abaixo do mínimo).
 
 Repetir o mesmo `reference` para o mesmo app devolve a transacção já criada
 (`idempotent_replay: true`), sem cobrar de novo.
 
 ### `GET /api/v1/charges/{gateway_payment_id}`
 
-Auth: `Authorization: Bearer <PAYGATE_API_KEY>`. Consulta de estado
-(fallback/polling — o normal é receber o webhook, ver abaixo).
+Auth: `Authorization: Bearer <PAYGATE_API_KEY>`. Consulta de estado —
+principal uso: *polling* de uma cobrança ainda `pending` (emola/mkesh/cartão/
+payfast) quando o webhook ainda não chegou.
 
 ```jsonc
 {
   "gateway_payment_id": "uuid",
   "reference": "IHP-123",
-  "status": "pending",   // 'pending' | 'success' | 'failed'
+  "status": "success",   // 'pending' | 'success' | 'failed'
   "amount": 10,
   "currency": "MZN",
   "method": "mpesa",
-  "paid_at": null,
+  "paid_at": "2026-08-05T...",
+  "checkout_url": null,
   "metadata": { "tipo": "fatura" }
 }
 ```

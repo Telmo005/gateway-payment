@@ -33,6 +33,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       currency: tx.currency,
       method: tx.method,
       paid_at: tx.paidAt ? tx.paidAt.toISOString() : null,
+      checkout_url: (tx.providerRaw as any)?.checkout_url ?? null,
       metadata: tx.metadata ?? {}
     });
   } catch (err) {

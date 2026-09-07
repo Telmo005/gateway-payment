@@ -5,7 +5,8 @@ import { transactions } from '@/db/schema';
 import { authenticateApp } from '@/lib/auth';
 import { chargeSchema, formatAmount } from '@/lib/validation';
 import { generateReference } from '@/lib/references';
-import { createCharge } from '@/lib/paysuite';
+import { createCharge } from '@/lib/debitopay';
+import { enqueueAndDeliver } from '@/lib/fanout';
 import { ApiError } from '@/lib/errors';
 import { logError } from '@/lib/errorLog';
 
@@ -13,6 +14,13 @@ export const runtime = 'nodejs';
 
 // POST /v1/charges — um app inicia uma cobrança.
 // Auth: Authorization: Bearer <chave_do_app>
+//
+// Debito Pay mistura síncrono e assíncrono conforme o método: mpesa confirma
+// já nesta resposta (status final, fan-out dispara já aqui); emola/mkesh e os
+// métodos de Hosted Checkout (visa_mastercard/payfast) nascem 'pending' — o
+// fan-out só dispara quando o webhook (/api/webhooks/debitopay) confirmar.
+// Cartão/PayFast devolvem `checkout_url`: o app tem de redireccionar o
+// pagador para lá.
 export async function POST(request: Request) {
   try {
     const app = await authenticateApp(request);
@@ -25,7 +33,7 @@ export async function POST(request: Request) {
     const input = parsed.data;
 
     // Idempotência: se este app já criou uma cobrança com esta referência,
-    // devolve a existente em vez de cobrar de novo no PaySuite.
+    // devolve a existente em vez de cobrar de novo.
     const [existing] = await db
       .select()
       .from(transactions)
@@ -37,23 +45,23 @@ export async function POST(request: Request) {
         gateway_payment_id: existing.id,
         reference: existing.appReference,
         status: existing.status,
-        checkout_url: (existing.providerRaw as any)?.data?.checkout_url ?? null,
+        message: (existing.providerRaw as any)?.message ?? null,
+        checkout_url: (existing.providerRaw as any)?.checkout_url ?? null,
         idempotent_replay: true
       });
     }
 
     const gatewayReference = generateReference(app.referencePrefix);
 
-    // O callback_url é SEMPRE este gateway — é isto que resolve o "1 webhook,
-    // N apps". Quer o PaySuite respeite o callback por-pagamento, quer use o
-    // do dashboard, ambos apontam para cá.
-    const charge = await createCharge({
-      amount: formatAmount(input.amount),
+    const result = await createCharge({
       method: input.method,
+      amount: input.amount,
+      currency: input.currency,
       reference: gatewayReference,
-      description: input.description,
-      returnUrl: input.return_url,
-      callbackUrl: `${process.env.PUBLIC_BASE_URL}/api/webhooks/paysuite`
+      payerPhone: input.payer_phone,
+      payerName: input.payer_name,
+      payerEmail: input.payer_email,
+      returnUrl: input.return_url
     });
 
     const [tx] = await db
@@ -62,23 +70,31 @@ export async function POST(request: Request) {
         appId: app.id,
         appReference: input.reference,
         reference: gatewayReference,
-        providerPaymentId: charge.providerPaymentId,
+        providerPaymentId: result.providerPaymentId,
         amount: formatAmount(input.amount),
         currency: input.currency,
         method: input.method,
         description: input.description,
-        status: 'pending',
+        status: result.status, // 'success' | 'pending' | 'failed'
+        paidAt: result.status === 'success' ? new Date() : null,
         returnUrl: input.return_url,
         metadata: input.metadata ?? {},
-        providerRaw: charge.raw
+        providerRaw: result.raw
       })
       .returning();
+
+    // 'pending' (emola/mkesh/cartão/payfast): sem estado final ainda — o
+    // fan-out ao app dono só acontece quando o webhook confirmar.
+    if (tx.status === 'success' || tx.status === 'failed') {
+      await enqueueAndDeliver(tx, tx.status === 'success' ? 'payment.success' : 'payment.failed');
+    }
 
     return NextResponse.json({
       gateway_payment_id: tx.id,
       reference: tx.appReference,
       status: tx.status,
-      checkout_url: charge.checkoutUrl ?? null
+      message: result.message ?? null,
+      checkout_url: result.checkoutUrl ?? null
     });
   } catch (err) {
     return await errorResponse(err);

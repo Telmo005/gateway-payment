@@ -2,7 +2,7 @@
   "name": "gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "Orquestrador central de pagamentos PaySuite multi-tenant. Um webhook, N apps.",
+  "description": "Orquestrador central de pagamentos Debito Pay multi-tenant. Um webhook, N apps.",
   "type": "module",
   "scripts": {
     "dev": "next dev -p 4000",

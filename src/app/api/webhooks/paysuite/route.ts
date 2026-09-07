@@ -9,6 +9,11 @@ import { logError } from '@/lib/errorLog';
 export const runtime = 'nodejs';
 
 // ============================================================================
+// LEGADO/DORMENTE desde a migração para MozPayment (2026-08, conta PaySuite
+// bloqueada). MozPayment é síncrono — não gera webhooks. Isto só continua
+// aqui para eventuais transacções PaySuite anteriores à migração ainda
+// 'pending'; nenhuma cobrança nova passa por este caminho. Ver README.md.
+//
 // O ÚNICO webhook do PaySuite. Todos os apps partilham esta URL.
 //   PaySuite -> aqui -> (verifica) -> encontra o app dono -> fan-out ao app.
 //
