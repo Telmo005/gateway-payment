@@ -48,13 +48,17 @@ export async function POST(request: Request) {
       if (remote.status === 'pending') continue;
 
       const newStatus = remote.status; // 'success' | 'failed'
+      // Funde em vez de substituir: a resposta de check-status não repete o
+      // `checkout_url` capturado na criação (cartão/payfast) — sobrescrever
+      // perdê-lo-ia, tal como corrigido no webhook (ver debitopay/route.ts).
+      const mergedRaw = { ...(tx.providerRaw as Record<string, unknown> | null), ...remote.raw };
       const updated = await db
         .update(transactions)
         .set({
           status: newStatus,
           paidAt: newStatus === 'success' ? new Date() : tx.paidAt,
           updatedAt: new Date(),
-          providerRaw: remote.raw
+          providerRaw: mergedRaw
         })
         .where(and(eq(transactions.id, tx.id), eq(transactions.status, 'pending')))
         .returning();

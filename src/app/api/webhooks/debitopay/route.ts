@@ -73,10 +73,14 @@ export async function POST(request: Request) {
     const mergedRaw = { ...(tx.providerRaw as Record<string, unknown> | null), ...event.raw };
 
     if (event.type === 'payment.success') {
+      // Usa o paid_at do provider quando vem no payload — com retentativas
+      // até 24h, "agora" pode ser bem mais tarde que o pagamento real.
+      const paidAt = event.paidAt ? new Date(event.paidAt) : new Date();
+
       // Transita só se ainda não estava 'success' — estado terminal.
       const updated = await db
         .update(transactions)
-        .set({ status: 'success', paidAt: new Date(), updatedAt: new Date(), providerRaw: mergedRaw })
+        .set({ status: 'success', paidAt, updatedAt: new Date(), providerRaw: mergedRaw })
         .where(and(eq(transactions.id, tx.id), ne(transactions.status, 'success')))
         .returning();
 
