@@ -53,9 +53,14 @@ export async function POST(request: Request) {
 
     const gatewayReference = generateReference(app.referencePrefix);
 
+    // Arredondado UMA vez e reusado no pedido ao provider e no ledger —
+    // input.amount é um float sem casas decimais garantidas pelo zod
+    // (ex.: 100.005), o que faria o valor cobrado divergir do guardado.
+    const amount = Math.round(input.amount * 100) / 100;
+
     const result = await createCharge({
       method: input.method,
-      amount: input.amount,
+      amount,
       currency: input.currency,
       reference: gatewayReference,
       payerPhone: input.payer_phone,
@@ -71,7 +76,7 @@ export async function POST(request: Request) {
         appReference: input.reference,
         reference: gatewayReference,
         providerPaymentId: result.providerPaymentId,
-        amount: formatAmount(input.amount),
+        amount: formatAmount(amount),
         currency: input.currency,
         method: input.method,
         description: input.description,
@@ -85,8 +90,19 @@ export async function POST(request: Request) {
 
     // 'pending' (emola/mkesh/cartão/payfast): sem estado final ainda — o
     // fan-out ao app dono só acontece quando o webhook confirmar.
+    //
+    // A transacção já está persistida com o estado final nesta altura — uma
+    // falha aqui (ex.: erro transitório de BD ao enfileirar a entrega) não
+    // pode fazer esta rota devolver 502 "falha ao processar" para uma
+    // cobrança que já foi processada com sucesso. O cron de retry de
+    // entregas (deliveries/retry) não cobre isto porque a linha nem chegou a
+    // ser inserida — por isso fica só registado, sem propagar.
     if (tx.status === 'success' || tx.status === 'failed') {
-      await enqueueAndDeliver(tx, tx.status === 'success' ? 'payment.success' : 'payment.failed');
+      try {
+        await enqueueAndDeliver(tx, tx.status === 'success' ? 'payment.success' : 'payment.failed');
+      } catch (err) {
+        await logError('charges.create.fanout', err, { transactionId: tx.id });
+      }
     }
 
     return NextResponse.json({
