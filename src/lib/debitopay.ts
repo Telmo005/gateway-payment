@@ -68,9 +68,20 @@ function merchantId(): string {
   return v;
 }
 
-// Carteiras separadas por moeda (a Debito Pay exige wallet_code do método/moeda certos).
-function walletCode(currency: 'MZN' | 'ZAR'): string {
-  const envVar = currency === 'ZAR' ? 'DEBITOPAY_WALLET_CODE_ZAR' : 'DEBITOPAY_WALLET_CODE_MZN';
+// Uma carteira por MÉTODO, não por moeda — confirmado no painel Debito Pay
+// (cada método lá tem o seu próprio wallet_code, mesmo dois em MZN). Enviar
+// o wallet_code errado não dá erro nenhum — o dinheiro só aparece na
+// carteira errada — por isso não há aqui um fallback "genérico por moeda".
+const WALLET_CODE_ENV: Record<PaymentMethod, string> = {
+  mpesa: 'DEBITOPAY_WALLET_CODE_MPESA',
+  emola: 'DEBITOPAY_WALLET_CODE_EMOLA',
+  mkesh: 'DEBITOPAY_WALLET_CODE_MKESH',
+  visa_mastercard: 'DEBITOPAY_WALLET_CODE_VISA_MASTERCARD',
+  payfast: 'DEBITOPAY_WALLET_CODE_PAYFAST'
+};
+
+function walletCode(method: PaymentMethod): string {
+  const envVar = WALLET_CODE_ENV[method];
   const v = process.env[envVar];
   if (!v) throw new ProviderError(`${envVar} não configurado`);
   return v;
@@ -122,7 +133,7 @@ export async function createCharge(input: DebitoPayChargeInput): Promise<DebitoP
     action: 'process',
     payment_method: input.method,
     merchant_id: merchantId(),
-    wallet_code: walletCode(input.currency),
+    wallet_code: walletCode(input.method),
     amount: input.amount,
     currency: input.currency,
     source: 'gateway',

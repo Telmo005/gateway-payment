@@ -63,7 +63,7 @@ Cria um projeto Supabase **só para o gateway**. Depois:
 cp .env.example .env
 # preenche DATABASE_URL, CRON_SECRET, e as DEBITOPAY_*:
 #   DEBITOPAY_API_KEY, DEBITOPAY_MERCHANT_ID,
-#   DEBITOPAY_WALLET_CODE_MZN, DEBITOPAY_WALLET_CODE_ZAR (se usares payfast),
+#   DEBITOPAY_WALLET_CODE_MPESA, _EMOLA, _MKESH, _VISA_MASTERCARD, _PAYFAST
 #   DEBITOPAY_WEBHOOK_SECRET
 # (PAYSUITE_* fica legado — só necessário se ainda houver transacções
 # antigas 'pending' para reconciliar via o webhook dormente)
