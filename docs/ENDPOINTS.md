@@ -19,9 +19,10 @@ Base URL:
 
 Variáveis de ambiente do provider de pagamento (só o backend deste gateway
 precisa delas): `DEBITOPAY_API_KEY`, `DEBITOPAY_MERCHANT_ID`,
-`DEBITOPAY_WALLET_CODE_MZN`, `DEBITOPAY_WALLET_CODE_ZAR` (só se usares
-PayFast) e `DEBITOPAY_WEBHOOK_SECRET`. `PAYSUITE_*`/`MOZPAYMENT_*` ficam
-legado, sem uso.
+`DEBITOPAY_WEBHOOK_SECRET`, e uma carteira **por método** (o Debito Pay não
+partilha carteira entre métodos, mesmo dentro da mesma moeda):
+`DEBITOPAY_WALLET_CODE_MPESA`, `_EMOLA`, `_MKESH`, `_VISA_MASTERCARD`,
+`_PAYFAST`. `PAYSUITE_*`/`MOZPAYMENT_*` ficam legado, sem uso.
 
 Todas as respostas de erro seguem o mesmo formato:
 
