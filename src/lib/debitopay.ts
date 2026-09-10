@@ -121,13 +121,27 @@ async function callOrchestrator(body: Record<string, unknown>): Promise<any> {
   const json = (await response.json().catch(() => null)) as any;
 
   if (!response.ok || !json || json.success === false) {
-    throw new ProviderError('Falha ao comunicar com a Debito Pay', {
-      httpStatus: response.status,
-      body: json
-    });
+    throw new ProviderError(
+      'Falha ao comunicar com a Debito Pay',
+      { httpStatus: response.status, body: json },
+      businessErrorMessage(json?.error)
+    );
   }
 
   return json;
+}
+
+// A Debito Pay devolve dois tipos de `error` bem diferentes: códigos internos
+// em SCREAMING_SNAKE_CASE (WALLET_CODE_NOT_FOUND, INVALID_API_KEY — nunca
+// seguros para mostrar a quem chama a gateway, revelam detalhes de config) e
+// frases legíveis em português (ex.: "O pagamento foi recusado pelo
+// operador.", "O número mKesh do cliente não está autorizado...") — essas
+// são o motivo de negócio real e valem a pena chegar ao utilizador final.
+// Distingue pela forma: uma frase tem espaço e letra minúscula, um código não.
+function businessErrorMessage(error: unknown): string | undefined {
+  if (typeof error !== 'string' || !error.trim()) return undefined;
+  const looksLikeSentence = /[a-z]/.test(error) && /\s/.test(error);
+  return looksLikeSentence ? error : undefined;
 }
 
 export async function createCharge(input: DebitoPayChargeInput): Promise<DebitoPayChargeResult> {

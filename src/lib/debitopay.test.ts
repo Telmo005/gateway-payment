@@ -136,6 +136,33 @@ describe('createCharge — payload e mapeamento de resposta', () => {
     ).rejects.toThrow(ProviderError);
   });
 
+  it('NÃO expõe userMessage para códigos internos em SCREAMING_SNAKE_CASE', async () => {
+    mockFetchOnce(404, { success: false, error: 'WALLET_CODE_NOT_FOUND' });
+    try {
+      await createCharge({ method: 'emola', amount: 100, currency: 'MZN', reference: 'REF-1' });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).userMessage).toBeUndefined();
+    }
+  });
+
+  it('expõe userMessage para motivos de negócio em linguagem natural', async () => {
+    mockFetchOnce(400, {
+      success: false,
+      error: 'O pagamento foi recusado pelo operador.',
+      status: 'failed',
+      payment_method: 'emola'
+    });
+    try {
+      await createCharge({ method: 'emola', amount: 100, currency: 'MZN', reference: 'REF-1' });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).userMessage).toBe('O pagamento foi recusado pelo operador.');
+    }
+  });
+
   it('lança ProviderError quando success: false mesmo com HTTP 200', async () => {
     mockFetchOnce(200, { success: false, error: 'WALLET_CODE_NOT_FOUND' });
     await expect(

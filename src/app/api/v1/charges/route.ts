@@ -7,7 +7,7 @@ import { chargeSchema, formatAmount } from '@/lib/validation';
 import { generateReference } from '@/lib/references';
 import { createCharge } from '@/lib/debitopay';
 import { enqueueAndDeliver } from '@/lib/fanout';
-import { ApiError } from '@/lib/errors';
+import { ApiError, ProviderError } from '@/lib/errors';
 import { logError } from '@/lib/errorLog';
 
 export const runtime = 'nodejs';
@@ -124,10 +124,17 @@ async function errorResponse(err: unknown) {
       { status: err.status }
     );
   }
-  // ProviderError e imprevistos: não vazar detalhes internos ao app.
+  // ProviderError e imprevistos: nunca vazar o corpo bruto da Debito Pay
+  // (pode conter códigos internos tipo WALLET_CODE_NOT_FOUND). Mas quando a
+  // Debito Pay devolve um motivo de negócio em linguagem natural (pagamento
+  // recusado pelo operador, número não autorizado, valor abaixo do mínimo),
+  // esse texto é seguro e útil para o utilizador final — sem ele, tudo
+  // parece o mesmo erro genérico, mesmo quando o pagamento está tecnicamente
+  // a funcionar e só falhou por um motivo legítimo do lado do pagador.
   await logError('charges.create', err);
+  const userMessage = err instanceof ProviderError ? err.userMessage : undefined;
   return NextResponse.json(
-    { error: { code: 'GATEWAY_ERROR', message: 'Falha ao processar a cobrança' } },
+    { error: { code: 'GATEWAY_ERROR', message: userMessage ?? 'Falha ao processar a cobrança' } },
     { status: 502 }
   );
 }
