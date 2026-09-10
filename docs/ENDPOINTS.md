@@ -91,7 +91,7 @@ Auth: `Authorization: Bearer <PAYGATE_API_KEY>` (chave por app, dada no
 ```
 
 Valores mínimos por método: `mpesa`/`mkesh` 10 MZN, `emola` 50 MZN,
-`visa_mastercard` 50 MZN, `payfast` 5 ZAR — validado antes de chamar a
+`visa_mastercard` 50 MZN, `payfast` 10 ZAR — validado antes de chamar a
 Debito Pay (`400 VALIDATION_ERROR` se abaixo do mínimo).
 
 Repetir o mesmo `reference` para o mesmo app devolve a transacção já criada

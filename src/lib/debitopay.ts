@@ -28,13 +28,15 @@ export type ChargeStatus = 'pending' | 'success' | 'failed';
 export const MOBILE_MONEY_METHODS: readonly PaymentMethod[] = ['mpesa', 'emola', 'mkesh'];
 export const HOSTED_CHECKOUT_METHODS: readonly PaymentMethod[] = ['visa_mastercard', 'payfast'];
 
-// Valores mínimos por transacção, conforme a doc oficial.
+// Valores mínimos por transacção. payfast corrigido para 10 ZAR em 2026-09-10
+// — a doc oficial dizia 5, mas a Debito Pay rejeita na prática com "Valor
+// mínimo PayFast: ZAR 10.00" (confirmado em produção via error_logs).
 export const MIN_AMOUNT: Record<PaymentMethod, number> = {
   mpesa: 10,
   mkesh: 10,
   emola: 50,
   visa_mastercard: 50,
-  payfast: 5
+  payfast: 10
 };
 
 export interface DebitoPayChargeInput {

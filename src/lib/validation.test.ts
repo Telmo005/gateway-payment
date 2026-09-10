@@ -114,21 +114,21 @@ describe('chargeSchema — hosted checkout (visa_mastercard/payfast)', () => {
     expect(result.success).toBe(false);
   });
 
-  it('aceita payfast com currency ZAR e amount >= 5', () => {
+  it('aceita payfast com currency ZAR e amount >= 10', () => {
     const result = chargeSchema.safeParse({
       ...baseCheckout,
       method: 'payfast',
-      amount: 5,
+      amount: 10,
       currency: 'ZAR'
     });
     expect(result.success).toBe(true);
   });
 
-  it('rejeita payfast abaixo do mínimo de 5 ZAR', () => {
+  it('rejeita payfast abaixo do mínimo de 10 ZAR', () => {
     const result = chargeSchema.safeParse({
       ...baseCheckout,
       method: 'payfast',
-      amount: 4.99,
+      amount: 9.99,
       currency: 'ZAR'
     });
     expect(result.success).toBe(false);
